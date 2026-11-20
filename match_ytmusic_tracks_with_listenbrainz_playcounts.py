@@ -34,16 +34,24 @@ RUN_INTERVAL_DAYS = 90
 JOB_NAME = 'ytmusic_lastfm_match'
 DATE = time.strftime('%m-%d-%Y')
 
-PLAYCOUNTS_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_playcounts.tsv')
+PLAYCOUNTS_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'listenbrainz_playcounts.tsv')
 YT_TRACK_DB_LATEST = os.path.join(
     OUTPUT_DIR, '..', 'ytmusic', 'playlists', '_tracks_db.tsv'
 )
 YT_TRACK_DB_OUT = os.path.join(OUTPUT_DIR, 'tsvs', 'ytmusic_all_database.tsv')
 YT_MATCH_ID_MAP = os.path.join(
-    OUTPUT_DIR, '..', 'ytmusic', 'playlists', '_ytmusic_lastfm_match_id_map.tsv'
+    OUTPUT_DIR,
+    '..',
+    'ytmusic',
+    'playlists',
+    '_ytmusic_listenbrainz_match_id_map.tsv',
 )
 YT_PLAYCOUNT_OUT = os.path.join(
-    OUTPUT_DIR, '..', 'ytmusic', 'playlists', '_ytmusic_lastfm_playcount.tsv'
+    OUTPUT_DIR,
+    '..',
+    'ytmusic',
+    'playlists',
+    '_ytmusic_listenbrainz_playcount.tsv',
 )
 
 
@@ -119,12 +127,14 @@ def save_tsvs(
   logs_dir = os.path.join(OUTPUT_DIR, 'logs')
   os.makedirs(logs_dir, exist_ok=True)
 
-  no_match_f = os.path.join(logs_dir, f'ytmusic_no_lastfm_match_{date_tag}.tsv')
+  no_match_f = os.path.join(
+      logs_dir, f'ytmusic_no_listenbrainz_match_{date_tag}.tsv'
+  )
   playcounts_log_f = os.path.join(
-      logs_dir, f'ytmusic_lastfm_playcounts_{date_tag}.tsv'
+      logs_dir, f'ytmusic_listenbrainz_playcounts_{date_tag}.tsv'
   )
   id_map_log_f = os.path.join(
-      logs_dir, f'ytmusic_lastfm_match_id_map_{date_tag}.tsv'
+      logs_dir, f'ytmusic_listenbrainz_match_id_map_{date_tag}.tsv'
   )
 
   pd.DataFrame.from_dict(yt_unmatched, orient='index').to_csv(
@@ -132,7 +142,7 @@ def save_tsvs(
   )
 
   playcounts_df = pd.DataFrame.from_dict(yt_playcounts, orient='index')
-  playcounts_df.columns = ['lastfm_playcount']
+  playcounts_df.columns = ['listenbrainz_playcount']
   playcounts_df.to_csv(
       playcounts_log_f, header=True, sep='\t', index=True, encoding='utf-8'
   )
@@ -141,7 +151,7 @@ def save_tsvs(
   )
 
   id_map_df = pd.DataFrame.from_dict(yt_id_map, orient='index')
-  id_map_df.columns = ['lastfm_fuzzy_id']
+  id_map_df.columns = ['listenbrainz_fuzzy_id']
   id_map_df.to_csv(
       id_map_log_f, header=True, sep='\t', index=True, encoding='utf-8'
   )
@@ -155,7 +165,7 @@ def save_tsvs(
     raise ValueError(
         f'Track DB length mismatch: {len(track_db)} != {len(yt_tracks)}'
     )
-  if track_db['lastfm_playcount'].sum() <= 0:
+  if track_db['listenbrainz_playcount'].sum() <= 0:
     raise ValueError('Total matched playcount must be > 0')
   track_db.to_csv(YT_TRACK_DB_OUT, sep='\t', header=True)
   if uni is not None:
@@ -383,7 +393,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
   if os.path.exists(YT_MATCH_ID_MAP):
     existing_id_map = pd.read_csv(
         YT_MATCH_ID_MAP, sep='\t', index_col=0
-    ).to_dict()['lastfm_fuzzy_id']
+    ).to_dict()['listenbrainz_fuzzy_id']
     logger.info('Loaded %d cached YT <-> playcount mappings',
                 len(existing_id_map))
 

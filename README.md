@@ -24,19 +24,19 @@ listenbrainz/
 
 ### `listenbrainz_scrape_history.py`
 
-Drop-in replacement for `lastfm/lastfm_scrape_history.py`. Polls incremental listens via `min_ts` (`count=1000`) in ~4.5 seconds/week, computes case-folded per-track playcounts and fuzzy album playcounts, and atomically updates downstream TSV contracts in `../music-sources-unified/tsvs/`.
+Polls incremental listens via `min_ts` (`count=1000`) in ~4.5 seconds/week, computes case-folded per-track playcounts and fuzzy album playcounts, and atomically updates `../music-sources-unified/tsvs/listenbrainz_*.tsv`.
 
 ```bash
-# Drop-in unified mode (default — writes ../music-sources-unified/tsvs/lastfm_*.tsv)
+# Unified mode (default — writes ../music-sources-unified/tsvs/listenbrainz_*.tsv)
 python listenbrainz_scrape_history.py
 
-# Parallel validation mode (writes listenbrainz/tsvs/listenbrainz_*.tsv + concordance report)
+# Parallel validation mode (writes listenbrainz/tsvs/listenbrainz_*.tsv)
 python listenbrainz_scrape_history.py --parallel
 ```
 
 ### `match_ytmusic_tracks_with_listenbrainz_playcounts.py`
 
-Drop-in replacement for `lastfm/match_ytmusic_tracks_with_lastfm_playcounts.py`. Matches YouTube Music tracks against `lastfm_playcounts.tsv` using an O(1) persistent ID cache plus vectorized RapidFuzz batch matching (90-day run interval, override with `--force`), plus a lightweight incremental YTMusic likes/dislikes feedback sync.
+Matches YouTube Music tracks against `listenbrainz_playcounts.tsv` using an O(1) persistent ID cache plus vectorized RapidFuzz batch matching (90-day run interval, override with `--force`), plus a lightweight incremental YTMusic likes/dislikes feedback sync.
 
 ```bash
 python match_ytmusic_tracks_with_listenbrainz_playcounts.py

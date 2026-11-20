@@ -64,9 +64,11 @@ DEFAULT_TOKEN = os.environ.get(
 )
 
 # Canonical unified paths consumed by music-sources-unified, redacted, ytmusic
-SCROBBLES_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_scrobbles.tsv')
-PLAYCOUNTS_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_playcounts.tsv')
-LASTFM_TOP_ALBUMS = os.path.join(OUTPUT_DIR, 'tsvs', 'lastfm_top_albums.tsv')
+SCROBBLES_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'listenbrainz_scrobbles.tsv')
+PLAYCOUNTS_TSV = os.path.join(OUTPUT_DIR, 'tsvs', 'listenbrainz_playcounts.tsv')
+LASTFM_TOP_ALBUMS = os.path.join(
+    OUTPUT_DIR, 'tsvs', 'listenbrainz_top_albums.tsv'
+)
 
 # Parallel validation output paths (`--parallel` mode)
 PARALLEL_TSV_DIR = os.path.join(SCRIPT_DIR, 'tsvs')
