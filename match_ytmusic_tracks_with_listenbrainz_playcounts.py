@@ -236,8 +236,8 @@ def _sync_incremental_feedback_if_configured(
     return 0
 
   tsvs_dir = os.path.join(SCRIPT_DIR, 'tsvs')
-  cache_path = os.path.join(tsvs_dir, '_feedback_synced_cache.tsv')
-  mbid_cache_path = os.path.join(tsvs_dir, '_mbid_lookup_cache.tsv')
+  cache_path = os.path.join(tsvs_dir, '_listenbrainz_feedback_synced_cache.tsv')
+  mbid_cache_path = os.path.join(tsvs_dir, '_listenbrainz_mbid_lookup_cache.tsv')
 
   synced_scores: Dict[Tuple[str, str], int] = {}
   if os.path.isfile(cache_path):

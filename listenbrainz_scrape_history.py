@@ -19,7 +19,6 @@ import re
 import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-import zipfile
 
 import pandas as pd
 import requests
@@ -123,11 +122,6 @@ def _find_archive_file(pattern: str) -> Optional[str]:
   return matches[0]
 
 
-def find_default_export_zip() -> Optional[str]:
-  """Finds the newest `listenbrainz_*.zip` archive in `.` or `./old/`."""
-  return _find_archive_file('listenbrainz_*.zip')
-
-
 def find_default_backfill_tsv() -> Optional[str]:
   """Finds `lastfm_missing_dated_backfill.tsv` in `.` or `./old/` if present."""
   return _find_archive_file('lastfm_missing_dated_backfill.tsv')
@@ -140,7 +134,7 @@ def parse_listen_record(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
   `release_name` and substitutes canonical MusicBrainz titles).
 
   Args:
-    record: Raw ListenBrainz JSON object from export JSONL or `/listens` API.
+    record: Raw ListenBrainz JSON object from `/listens` API.
 
   Returns:
     Dict with `artist`, `album`, `title`, and `timestamps`, or None if invalid.
@@ -168,43 +162,6 @@ def _empty_scrobbles_df() -> pd.DataFrame:
       'timestamps': pd.Series(dtype='int64'),
       'datetime': pd.Series(dtype='datetime64[ns]'),
   })
-
-
-def load_listens_from_zip(zip_path: str) -> pd.DataFrame:
-  """Streams all `listens/YYYY/M.jsonl` records from a ListenBrainz export zip.
-
-  Args:
-    zip_path: Path to the ListenBrainz export `.zip` archive.
-
-  Returns:
-    DataFrame with columns `['artist', 'album', 'title', 'timestamps']`.
-  """
-  if not os.path.exists(zip_path):
-    raise FileNotFoundError(f'ListenBrainz export zip not found: {zip_path}')
-
-  rows: List[Dict[str, Any]] = []
-  with zipfile.ZipFile(zip_path, 'r') as zf:
-    jsonl_names = sorted(
-        n
-        for n in zf.namelist()
-        if n.startswith('listens/') and n.endswith('.jsonl')
-    )
-    for name in jsonl_names:
-      with zf.open(name) as fh:
-        for raw_line in fh:
-          line = raw_line.strip()
-          if not line:
-            continue
-          parsed = parse_listen_record(json.loads(line))
-          if parsed is not None:
-            rows.append(parsed)
-
-  logger.info(
-      'Loaded %d listens from export archive %s',
-      len(rows),
-      os.path.basename(zip_path),
-  )
-  return _empty_scrobbles_df() if not rows else pd.DataFrame(rows)
 
 
 def _respect_rate_limit(resp: requests.Response) -> None:
@@ -464,19 +421,17 @@ def get_scrobbles(
     username: str = DEFAULT_USER_NAME,
     token: str = DEFAULT_TOKEN,
     existing_tsv: Optional[str] = None,
-    seed_zip: Optional[str] = None,
     overlap_days: int = DEFAULT_OVERLAP_DAYS,
     full_api: bool = False,
     include_backfill: bool = True,
     missing_dated_tsv: Optional[str] = None,
 ) -> pd.DataFrame:
-  """Builds up-to-date scrobble history from seed/cache + incremental API.
+  """Builds up-to-date scrobble history from local TSV cache + incremental API.
 
   Args:
     username: ListenBrainz username.
     token: Optional ListenBrainz user token.
     existing_tsv: Existing local scrobbles TSV for fast incremental updates.
-    seed_zip: Optional ListenBrainz export `.zip` for cold-start seeding.
     overlap_days: Lookback window in days for incremental `min_ts` polling.
     full_api: If True, re-fetch entire history from API via `max_ts`.
     include_backfill: Merge any un-ingested dated Last.fm gap rows.
@@ -500,12 +455,8 @@ def get_scrobbles(
         )
         base_df = finalize_scrobbles_df(base_df)
       else:
-        resolved_zip = seed_zip or find_default_export_zip()
-        if resolved_zip and os.path.exists(resolved_zip):
-          base_df = finalize_scrobbles_df(load_listens_from_zip(resolved_zip))
-        else:
-          logger.info('No local TSV or zip found; running full API fetch')
-          base_df = fetch_listens_full(username=username, token=token)
+        logger.info('No local TSV found; running full API fetch')
+        base_df = fetch_listens_full(username=username, token=token)
 
       if not base_df.empty:
         max_ts = int(base_df['timestamps'].max())
@@ -803,12 +754,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
   parser.add_argument(
       '--reseed',
       action='store_true',
-      help='Ignore existing target TSV and re-seed from export zip + API.',
-  )
-  parser.add_argument(
-      '--seed-zip',
-      default=None,
-      help='Explicit path to ListenBrainz export .zip archive.',
+      help='Ignore existing target TSV and re-fetch full history from API.',
   )
   parser.add_argument(
       '--full',
@@ -875,7 +821,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
       username=args.username,
       token=DEFAULT_TOKEN,
       existing_tsv=existing_for_load,
-      seed_zip=args.seed_zip,
       overlap_days=args.overlap_days,
       full_api=args.full,
       include_backfill=not args.no_backfill,

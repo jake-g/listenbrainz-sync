@@ -12,7 +12,6 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 from unittest.mock import patch
-import zipfile
 
 import pandas as pd
 
@@ -56,30 +55,27 @@ def _make_lb_listen(
 
 
 class TestListenBrainzScrapeHistory(unittest.TestCase):
-  """Tests zip loading, API pagination, backfill merge, and TSV contracts."""
+  """Tests listen parsing, API pagination, backfill merge, and TSV contracts."""
 
-  def test_load_listens_from_zip_streams_jsonl_and_ignores_undated(
-      self,
-  ) -> None:
-    """Verifies JSONL records parse accurately and undated bug rows drop."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-      zip_path = os.path.join(tmpdir, 'listenbrainz_test.zip')
-      rec1 = _make_lb_listen(1700000000, 'Boards of Canada', 'Geogaddi', '1969')
-      rec2 = _make_lb_listen(1700000300, 'Aphex Twin', '', 'Windowlicker')
-      rec_undated = _make_lb_listen(42, 'Pink Floyd', 'Meddle', 'Echoes')
-      with zipfile.ZipFile(zip_path, 'w') as zf:
-        zf.writestr('user.json', '{"name": "totoro_jake"}')
-        zf.writestr(
-            'listens/2023/11.jsonl',
-            '\n'.join(json.dumps(r) for r in (rec1, rec2, rec_undated)) + '\n',
-        )
+  def test_parse_listen_record_parses_and_ignores_undated(self) -> None:
+    """Verifies listen payloads parse accurately and undated rows drop."""
+    rec1 = _make_lb_listen(1700000000, 'Boards of Canada', 'Geogaddi', '1969')
+    rec2 = _make_lb_listen(1700000300, 'Aphex Twin', '', 'Windowlicker')
+    rec_undated = _make_lb_listen(42, 'Pink Floyd', 'Meddle', 'Echoes')
 
-      df = lb.load_listens_from_zip(zip_path)
-      self.assertEqual(len(df), 2)
-      self.assertEqual(df.iloc[0]['artist'], 'Boards of Canada')
-      self.assertEqual(df.iloc[0]['album'], 'Geogaddi')
-      self.assertEqual(df.iloc[1]['album'], '')
-      self.assertEqual(int(df.iloc[1]['timestamps']), 1700000300)
+    p1 = lb.parse_listen_record(rec1)
+    p2 = lb.parse_listen_record(rec2)
+    p_undated = lb.parse_listen_record(rec_undated)
+
+    self.assertIsNotNone(p1)
+    assert p1 is not None
+    self.assertEqual(p1['artist'], 'Boards of Canada')
+    self.assertEqual(p1['album'], 'Geogaddi')
+    self.assertIsNotNone(p2)
+    assert p2 is not None
+    self.assertEqual(p2['album'], '')
+    self.assertEqual(p2['timestamps'], 1700000300)
+    self.assertIsNone(p_undated)
 
   @patch('listenbrainz_scrape_history.time.sleep')
   @patch('listenbrainz_scrape_history.requests.Session')
