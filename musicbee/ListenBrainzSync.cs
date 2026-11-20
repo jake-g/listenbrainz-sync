@@ -53,12 +53,26 @@ namespace MusicBeePlugin {
             "mnuTools/Sync ListenBrainz Playcounts",
             string.Empty,
             OnManualSyncClicked);
+        mbApiInterface.MB_AddMenuItem(
+            "mnuTools/Export MusicBee DB TSVs",
+            string.Empty,
+            OnExportDbClicked);
         TriggerSyncAsync();
       }
     }
 
     private void OnManualSyncClicked(object sender, EventArgs e) {
       TriggerSyncAsync();
+    }
+
+    private void OnExportDbClicked(object sender, EventArgs e) {
+      ThreadPool.QueueUserWorkItem(delegate {
+        try {
+          ExportDbTsvs(false);
+        } catch (Exception ex) {
+          Log("DB export error: " + ex.Message);
+        }
+      });
     }
 
     private void TriggerSyncAsync() {
@@ -125,6 +139,21 @@ namespace MusicBeePlugin {
         hearted = SyncHearts(username, libraryIndex, dryRun);
       }
 
+      bool exportTest = state.ContainsKey("export_db_test") &&
+                        state["export_db_test"].Equals(
+                            "true", StringComparison.OrdinalIgnoreCase);
+      bool exportStartup = state.ContainsKey("export_db_on_startup") &&
+                           state["export_db_on_startup"].Equals(
+                               "true", StringComparison.OrdinalIgnoreCase);
+      if (exportTest || exportStartup) {
+        if (exportTest) {
+          state["export_db_test"] = "false";
+        }
+        ExportDbTsvs(exportTest, state.ContainsKey("db_assets_dir")
+                                     ? state["db_assets_dir"]
+                                     : "");
+      }
+
       if (!dryRun && newestSeenTs > lastSyncTs) {
         state["last_sync_ts"] = newestSeenTs.ToString();
       }
@@ -142,6 +171,96 @@ namespace MusicBeePlugin {
       Log(string.Format(
           "Sync complete (dry_run={0}): playcounts_incremented={1}, hearts_updated={2}",
           dryRun, incremented, hearted));
+    }
+
+    private void ExportDbTsvs(bool testMode, string configuredDir = "") {
+      string outDir = testMode ? stateDir : configuredDir;
+      if (string.IsNullOrEmpty(outDir)) {
+        Dictionary<string, string> st = LoadState();
+        outDir = st.ContainsKey("db_assets_dir") ? st["db_assets_dir"] : "";
+      }
+      if (string.IsNullOrEmpty(outDir)) {
+        outDir = stateDir;
+      }
+      Directory.CreateDirectory(outDir);
+
+      string libFile = Path.Combine(
+          outDir,
+          testMode ? "musicbee_library_test.tsv" : "musicbee_library.tsv");
+      string inboxFile = Path.Combine(
+          outDir,
+          testMode ? "musicbee_inbox_test.tsv" : "musicbee_inbox.tsv");
+
+      int libCount = WriteDomainTsv("", libFile);
+      int inboxCount = WriteDomainTsv(
+          "<Source Type=\"4\"><Conditions CombineMethod=\"All\"/></Source>",
+          inboxFile);
+      Log(string.Format(
+          "Exported MusicBee DB TSVs (test={0}): library={1} ({2}), inbox={3} ({4})",
+          testMode, libCount, libFile, inboxCount, inboxFile));
+    }
+
+    private int WriteDomainTsv(string query, string outPath) {
+      string[] files;
+      if (!mbApiInterface.Library_QueryFilesEx(query, out files) ||
+          files == null) {
+        files = new string[0];
+      }
+      string tmpPath = outPath + ".tmp";
+      using (StreamWriter sw = new StreamWriter(
+                 tmpPath, false, new System.Text.UTF8Encoding(false))) {
+        sw.WriteLine(
+            "Artist\tAlbum Artist\tAlbum\tGenre\tPlay Count\tRating\tTitle\tTrack Count\tTrack #\tYear\tDateCustom\tPath\tYearCustom");
+        foreach (string url in files) {
+          string artist = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Artist));
+          string albumArtist = CleanCell(
+              mbApiInterface.Library_GetFileTag(
+                  url, MetaDataType.AlbumArtist));
+          string album = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Album));
+          string genre = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Genre));
+          string playCount = CleanCell(
+              mbApiInterface.Library_GetFileProperty(
+                  url, FilePropertyType.PlayCount));
+          if (string.IsNullOrEmpty(playCount)) {
+            playCount = "0";
+          }
+          string rating = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Rating));
+          string title = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.TrackTitle));
+          string trackCount = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.TrackCount));
+          string trackNo = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.TrackNo));
+          string year = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Year));
+          string dateCustom = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Custom3));
+          string path = CleanCell(url);
+          string yearCustom = CleanCell(
+              mbApiInterface.Library_GetFileTag(url, MetaDataType.Virtual7));
+
+          sw.WriteLine(string.Join("\t", new string[] {
+              artist, albumArtist, album, genre, playCount, rating, title,
+              trackCount, trackNo, year, dateCustom, path, yearCustom
+          }));
+        }
+      }
+      if (File.Exists(outPath)) {
+        File.Delete(outPath);
+      }
+      File.Move(tmpPath, outPath);
+      return files.Length;
+    }
+
+    private static string CleanCell(string s) {
+      if (string.IsNullOrEmpty(s)) {
+        return string.Empty;
+      }
+      return s.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
     }
 
     private int SyncPlaycounts(

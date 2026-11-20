@@ -216,10 +216,17 @@ namespace MusicBeePlugin {
 
     public enum MetaDataType {
       Album = 30,
+      AlbumArtist = 31,
       Artist = 32,
+      Custom3 = 48,
+      Genre = 59,
       TrackTitle = 65,
       Rating = 75,
       RatingLove = 76,
+      TrackNo = 86,
+      TrackCount = 87,
+      Year = 88,
+      Virtual7 = 123,
     }
 
     public enum PlayStatisticType {
