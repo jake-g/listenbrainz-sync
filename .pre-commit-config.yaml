@@ -1,4 +1,4 @@
-exclude: '^(logs/|.*\.(csv|tsv|m3u|log|txt|ipynb))$'
+exclude: '^((old|logs|tsvs)/|.*\.(csv|tsv|m3u|log|txt|ipynb))$'
 
 repos:
   - repo: https://github.com/google/yapf
@@ -8,7 +8,7 @@ repos:
         args: [--style, '{based_on_style: google, indent_width: 2, column_limit: 80}']
 
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: v5.13.2
     hooks:
       - id: isort
         args: [--profile, google]
@@ -17,6 +17,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files

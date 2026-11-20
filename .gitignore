@@ -1,8 +1,15 @@
 .ipynb_checkpoints/
-__pycache__/
+
 old/
+notes/
 logs/
 tsvs/
+external/
+
+*cache*/
+*.py[cod]
+*.log
+*.zip
 .DS_Store
 auth.py
-*.log
+CHANGELOG.md

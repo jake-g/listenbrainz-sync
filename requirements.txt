@@ -1,9 +1,3 @@
 pandas
-requests
-requests-toolbelt
-fuzzywuzzy
 rapidfuzz
-python-Levenshtein
-matplotlib
-numpy
-seaborn
+requests
