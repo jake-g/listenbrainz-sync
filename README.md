@@ -15,6 +15,7 @@ listenbrainz/
 ├── auth.py                                              # Local ListenBrainz credentials (gitignored)
 ├── requirements.txt                                     # Python dependencies
 ├── README.md                                            # Module documentation
+├── musicbee/                                            # MusicBee C# plugin (inbound playcount & hearts sync)
 └── old/                                                 # Local migration archive & one-off scripts (gitignored)
 ```
 
