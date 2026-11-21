@@ -48,7 +48,7 @@ python match_ytmusic_tracks_with_listenbrainz_playcounts.py --force
 
 ### `sync_listenbrainz_playlists_to_ytmusic.py`
 
-Syncs generated ListenBrainz recommendation playlists (`weekly-exploration`, `weekly-jams`, and annual `top-discoveries` / `top-missed-recordings`) into rolling `zz lb ...` playlists on YouTube Music, resolving tracks via persistent cache, local YTMusic DB, and live search while excluding not-liked tracks.
+Syncs generated ListenBrainz recommendation playlists (`weekly-exploration`, `weekly-jams`, all annual `top-discoveries-of-YYYY` playlists, and a single combined `zz lb missed tracks` playlist spanning all `top-missed-recordings-of-YYYY` years newest-to-oldest) into rolling `zz lb ...` playlists on YouTube Music, resolving tracks via persistent cache, local YTMusic DB, and live search while excluding not-liked tracks.
 
 ```bash
 python sync_listenbrainz_playlists_to_ytmusic.py

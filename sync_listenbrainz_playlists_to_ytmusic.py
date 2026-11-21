@@ -1,11 +1,11 @@
 """Syncs ListenBrainz recommendation playlists to YouTube Music.
 
 Fetches generated JSPF playlists from ListenBrainz's `/playlists/createdfor`
-endpoint (`weekly-exploration`, `weekly-jams`, and annual `top-discoveries` /
-`top-missed-recordings`), resolves tracks to YouTube Music `videoId`s via a
-three-tier lookup (persistent cache -> local YTMusic database -> live YTMusic
-search), excludes not-liked/disliked tracks, and creates or replaces rolling
-`zz lb ...` playlists on YouTube Music via `ytmusic_library.py`.
+endpoint (`weekly-exploration`, `weekly-jams`, and all annual
+`top-discoveries-of-YYYY` years), resolves tracks to YouTube Music `videoId`s
+via a three-tier lookup (persistent cache -> local YTMusic database -> live
+YTMusic search), excludes not-liked/disliked tracks, and creates or replaces
+rolling `zz lb ...` playlists on YouTube Music via `ytmusic_library.py`.
 """
 
 from __future__ import annotations
@@ -55,14 +55,13 @@ PLAYLIST_URI_PREFIX = 'https://listenbrainz.org/playlist/'
 
 PLAYLIST_PREFIX = 'zz lb '
 PLAYLIST_ADD_CHUNK = 50
-DEFAULT_CREATEDFOR_COUNT = 50
+DEFAULT_CREATEDFOR_COUNT = 100
 CACHE_MISS_SENTINEL = '__MISS__'
 
 WEEKLY_PATCHES = ('weekly-exploration', 'weekly-jams')
-ANNUAL_PATCH_PREFIXES = (
-    'top-discoveries-of-',
-    'top-missed-recordings-of-',
-)
+ANNUAL_DISCOVERIES_PREFIX = 'top-discoveries-of-'
+ANNUAL_MISSED_PREFIX = 'top-missed-recordings-of-'
+COMBINED_MISSED_PATCH = 'top-missed-recordings-all'
 
 TSV_DIR = os.path.join(SCRIPT_DIR, 'tsvs')
 VID_CACHE_TSV = os.path.join(TSV_DIR, '_listenbrainz_ytmusic_vid_cache.tsv')
@@ -124,6 +123,8 @@ def format_ytmusic_playlist_name(source_patch: str) -> str:
     return f'{PLAYLIST_PREFIX}weekly exploration'
   if slug == 'weekly-jams':
     return f'{PLAYLIST_PREFIX}weekly jams'
+  if slug == COMBINED_MISSED_PATCH:
+    return f'{PLAYLIST_PREFIX}missed tracks'
   if slug.startswith('top-discoveries-of-'):
     year = slug[len('top-discoveries-of-') :]
     return f'{PLAYLIST_PREFIX}top discoveries {year}'
@@ -229,29 +230,75 @@ def fetch_createdfor_playlists(
     )
   http = session or requests.Session()
   url = f'{API_BASE_URL}/user/{username}/playlists/createdfor'
-  payload = _request_lb_json(
-      http, url, _lb_headers(token), params={'count': count}
-  )
   records: List[Dict[str, Any]] = []
-  for wrapper in payload.get('playlists', []) or []:
-    pl = wrapper.get('playlist') or {}
-    ext = (pl.get('extension') or {}).get(JSPF_PLAYLIST_EXT) or {}
-    algo = (ext.get('additional_metadata') or {}).get(
-        'algorithm_metadata'
-    ) or {}
-    source_patch = str(algo.get('source_patch') or '').strip()
-    playlist_mbid = extract_mbid(pl.get('identifier'), PLAYLIST_URI_PREFIX)
-    if not playlist_mbid or not source_patch:
-      continue
-    records.append({
-        'playlist_mbid': playlist_mbid,
-        'source_patch': source_patch,
-        'title': str(pl.get('title') or '').strip(),
-        'date': str(pl.get('date') or '').strip(),
-        'annotation': str(pl.get('annotation') or '').strip(),
-    })
+  offset = 0
+  page_size = max(1, min(count, 100))
+  while True:
+    payload = _request_lb_json(
+        http,
+        url,
+        _lb_headers(token),
+        params={'count': page_size, 'offset': offset},
+    )
+    items = payload.get('playlists', []) or []
+    for wrapper in items:
+      pl = wrapper.get('playlist') or {}
+      ext = (pl.get('extension') or {}).get(JSPF_PLAYLIST_EXT) or {}
+      algo = (ext.get('additional_metadata') or {}).get(
+          'algorithm_metadata'
+      ) or {}
+      source_patch = str(algo.get('source_patch') or '').strip()
+      playlist_mbid = extract_mbid(pl.get('identifier'), PLAYLIST_URI_PREFIX)
+      if not playlist_mbid or not source_patch:
+        continue
+      records.append({
+          'playlist_mbid': playlist_mbid,
+          'source_patch': source_patch,
+          'title': str(pl.get('title') or '').strip(),
+          'date': str(pl.get('date') or '').strip(),
+          'annotation': str(pl.get('annotation') or '').strip(),
+      })
+    total = int(payload.get('playlist_count') or 0)
+    offset += len(items)
+    if not items or len(items) < page_size or (total and offset >= total):
+      break
   records.sort(key=lambda r: r['date'], reverse=True)
   return records
+
+
+def _build_combined_missed_record(
+    latest_by_patch: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+  """Builds a combined missed-tracks record ordered newest year -> oldest year.
+
+  Args:
+    latest_by_patch (Dict[str, Dict[str, Any]]): Newest playlist per patch.
+
+  Returns:
+    Optional[Dict[str, Any]]: Combined record with `source_mbids` ordered
+    newest-to-oldest so the oldest year lands at the bottom of the playlist.
+  """
+  prefix = ANNUAL_MISSED_PREFIX
+  missed_years = sorted(
+      (
+          p[len(prefix) :]
+          for p in latest_by_patch
+          if p.startswith(prefix) and p[len(prefix) :].isdigit()
+      ),
+      reverse=True,
+  )
+  if not missed_years:
+    return None
+  recs = [latest_by_patch[f'{prefix}{yr}'] for yr in missed_years]
+  return {
+      'playlist_mbid': ','.join(r['playlist_mbid'] for r in recs),
+      'source_mbids': [r['playlist_mbid'] for r in recs],
+      'years': missed_years,
+      'source_patch': COMBINED_MISSED_PATCH,
+      'title': f'Missed Tracks ({missed_years[-1]}-{missed_years[0]})',
+      'date': max(r.get('date', '') for r in recs),
+      'annotation': '',
+  }
 
 
 def select_target_playlists(
@@ -262,8 +309,10 @@ def select_target_playlists(
   """Selects the newest ListenBrainz playlist per requested `source_patch`.
 
   When neither `patches` nor `year` is specified, selects the latest
-  `weekly-exploration` and `weekly-jams` playlists plus the most recent year's
-  `top-discoveries-of-YYYY` and `top-missed-recordings-of-YYYY`.
+  `weekly-exploration` and `weekly-jams` playlists, all available
+  `top-discoveries-of-YYYY` annual playlists, and one combined
+  `top-missed-recordings-all` playlist (`zz lb missed tracks`) ordered from
+  newest year at the top to oldest year at the bottom.
 
   Args:
     available (Sequence[Dict[str, Any]]): Playlists sorted newest first.
@@ -271,13 +320,17 @@ def select_target_playlists(
     year (Optional[int]): Specific annual Year-in-Music year to include.
 
   Returns:
-    List[Dict[str, Any]]: Selected playlist metadata dicts (one per patch).
+    List[Dict[str, Any]]: Selected playlist metadata dicts (one per target).
   """
   latest_by_patch: Dict[str, Dict[str, Any]] = {}
   for rec in sorted(available, key=lambda r: r.get('date', ''), reverse=True):
     patch = rec['source_patch']
     if patch not in latest_by_patch:
       latest_by_patch[patch] = rec
+
+  combined_missed = _build_combined_missed_record(latest_by_patch)
+  if combined_missed is not None:
+    latest_by_patch[COMBINED_MISSED_PATCH] = combined_missed
 
   wanted: List[str] = []
   if patches:
@@ -287,23 +340,24 @@ def select_target_playlists(
       if wp in latest_by_patch:
         wanted.append(wp)
     if year is None:
-      for prefix in ANNUAL_PATCH_PREFIXES:
-        matching_years = sorted(
-            (
-                p[len(prefix) :]
-                for p in latest_by_patch
-                if p.startswith(prefix) and p[len(prefix) :].isdigit()
-            ),
-            reverse=True,
-        )
-        if matching_years:
-          wanted.append(f'{prefix}{matching_years[0]}')
+      prefix = ANNUAL_DISCOVERIES_PREFIX
+      matching_years = sorted(
+          (
+              p[len(prefix) :]
+              for p in latest_by_patch
+              if p.startswith(prefix) and p[len(prefix) :].isdigit()
+          ),
+          reverse=True,
+      )
+      for yr in matching_years:
+        wanted.append(f'{prefix}{yr}')
+      if COMBINED_MISSED_PATCH in latest_by_patch:
+        wanted.append(COMBINED_MISSED_PATCH)
 
   if year is not None:
-    for prefix in ANNUAL_PATCH_PREFIXES:
-      patch_name = f'{prefix}{year}'
-      if patch_name not in wanted:
-        wanted.append(patch_name)
+    patch_name = f'{ANNUAL_DISCOVERIES_PREFIX}{year}'
+    if patch_name not in wanted:
+      wanted.append(patch_name)
 
   selected: List[Dict[str, Any]] = []
   for patch in wanted:
@@ -993,7 +1047,11 @@ def sync_playlists(
     yt_title = format_ytmusic_playlist_name(patch)
     lb_date = pl_meta['date'][:10] if pl_meta.get('date') else ''
 
-    tracks = fetch_playlist_tracks(pl_mbid, token=token, session=http)
+    source_mbids = pl_meta.get('source_mbids') or [pl_mbid]
+    tracks: List[Dict[str, Any]] = []
+    for sub_mbid in source_mbids:
+      tracks.extend(fetch_playlist_tracks(sub_mbid, token=token, session=http))
+
     video_ids, stats, cache_dirty = resolve_tracks_to_video_ids(
         tracks=tracks,
         vid_cache=vid_cache,
@@ -1013,11 +1071,18 @@ def sync_playlists(
       )
       continue
 
-    desc = (
-        f'ListenBrainz {patch} ({lb_date}) | '
-        f'{len(video_ids)}/{len(tracks)} tracks matched | '
-        f'https://listenbrainz.org/playlist/{pl_mbid}'
-    )
+    years = pl_meta.get('years') or []
+    if len(source_mbids) > 1 and years:
+      desc = (
+          f'ListenBrainz missed tracks ({years[0]} down to {years[-1]}, '
+          f'{lb_date}) | {len(video_ids)}/{len(tracks)} tracks matched'
+      )
+    else:
+      desc = (
+          f'ListenBrainz {patch} ({lb_date}) | '
+          f'{len(video_ids)}/{len(tracks)} tracks matched | '
+          f'https://listenbrainz.org/playlist/{pl_mbid}'
+      )
     prev_yt_id = str((sync_state.get(patch) or {}).get('yt_playlist_id') or '')
     yt_pl_id = upsert_ytmusic_playlist(
         yt_lib=yt_lib,

@@ -34,7 +34,7 @@ def _make_createdfor_payload() -> Dict[str, Any]:
     }
 
   return {
-      'playlist_count': 5,
+      'playlist_count': 7,
       'playlists': [
           _item('mbid-exp-old', 'weekly-exploration', '2026-08-24', 'Old Exp'),
           _item('mbid-exp-new', 'weekly-exploration', '2026-09-14', 'New Exp'),
@@ -44,6 +44,18 @@ def _make_createdfor_payload() -> Dict[str, Any]:
               'top-discoveries-of-2025',
               '2026-02-22',
               'Top Discoveries 2025',
+          ),
+          _item(
+              'mbid-disc-2024',
+              'top-discoveries-of-2024',
+              '2026-02-22',
+              'Top Discoveries 2024',
+          ),
+          _item(
+              'mbid-miss-2024',
+              'top-missed-recordings-of-2024',
+              '2026-02-21',
+              'Top Missed 2024',
           ),
           _item(
               'mbid-miss-2025',
@@ -79,8 +91,8 @@ class SyncListenBrainzPlaylistsTest(unittest.TestCase):
         'zz lb top discoveries 2025',
     )
     self.assertEqual(
-        lb_sync.format_ytmusic_playlist_name('top-missed-recordings-of-2025'),
-        'zz lb top missed 2025',
+        lb_sync.format_ytmusic_playlist_name('top-missed-recordings-all'),
+        'zz lb missed tracks',
     )
 
   def test_extract_mbid_handles_string_and_list(self) -> None:
@@ -95,8 +107,10 @@ class SyncListenBrainzPlaylistsTest(unittest.TestCase):
         'a7747fb6-457f-48d7',
     )
 
-  def test_select_target_playlists_picks_latest_weekly_and_annual(self) -> None:
-    """Selects newest weekly playlists plus latest Year-in-Music patches."""
+  def test_select_target_playlists_combines_missed_newest_to_oldest(
+      self,
+  ) -> None:
+    """Selects weekly, all discovery years, and combined missed tracks."""
     session = MagicMock()
     resp = MagicMock()
     resp.status_code = 200
@@ -105,15 +119,20 @@ class SyncListenBrainzPlaylistsTest(unittest.TestCase):
 
     available = lb_sync.fetch_createdfor_playlists('demo_user', session=session)
     selected = lb_sync.select_target_playlists(available)
-    by_patch = {r['source_patch']: r['playlist_mbid'] for r in selected}
+    by_patch = {r['source_patch']: r for r in selected}
     self.assertEqual(
-        by_patch,
+        {k: v['playlist_mbid'] for k, v in by_patch.items()},
         {
             'weekly-exploration': 'mbid-exp-new',
             'weekly-jams': 'mbid-jam-new',
             'top-discoveries-of-2025': 'mbid-disc-2025',
-            'top-missed-recordings-of-2025': 'mbid-miss-2025',
+            'top-discoveries-of-2024': 'mbid-disc-2024',
+            'top-missed-recordings-all': 'mbid-miss-2025,mbid-miss-2024',
         },
+    )
+    self.assertEqual(
+        by_patch['top-missed-recordings-all']['source_mbids'],
+        ['mbid-miss-2025', 'mbid-miss-2024'],
     )
 
   def test_resolve_tracks_three_tiers_and_not_like_exclusion(self) -> None:
