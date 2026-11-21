@@ -12,6 +12,8 @@ listenbrainz/
 ├── listenbrainz_scrape_history_test.py                  # Unit test suite (CI-ready)
 ├── match_ytmusic_tracks_with_listenbrainz_playcounts.py # YTMusic playcount matcher & incremental feedback sync
 ├── match_ytmusic_tracks_with_listenbrainz_playcounts_test.py # Unit tests for matcher & incremental feedback
+├── sync_listenbrainz_playlists_to_ytmusic.py            # Syncs ListenBrainz recommendation playlists to YTMusic
+├── sync_listenbrainz_playlists_to_ytmusic_test.py       # Unit tests for playlist sync
 ├── auth.py                                              # Local ListenBrainz credentials (gitignored)
 ├── requirements.txt                                     # Python dependencies
 ├── README.md                                            # Module documentation
@@ -42,6 +44,15 @@ Matches YouTube Music tracks against `listenbrainz_playcounts.tsv` using an O(1)
 ```bash
 python match_ytmusic_tracks_with_listenbrainz_playcounts.py
 python match_ytmusic_tracks_with_listenbrainz_playcounts.py --force
+```
+
+### `sync_listenbrainz_playlists_to_ytmusic.py`
+
+Syncs generated ListenBrainz recommendation playlists (`weekly-exploration`, `weekly-jams`, and annual `top-discoveries` / `top-missed-recordings`) into rolling `zz lb ...` playlists on YouTube Music, resolving tracks via persistent cache, local YTMusic DB, and live search while excluding not-liked tracks.
+
+```bash
+python sync_listenbrainz_playlists_to_ytmusic.py
+python sync_listenbrainz_playlists_to_ytmusic.py --dry-run
 ```
 
 ---
